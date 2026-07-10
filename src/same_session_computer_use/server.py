@@ -44,11 +44,11 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "window": {"type": "string", "description": "Hyprland address, exact-capture identifier, exact class, or title substring."},
-                "save_path": {"type": ["string", "null"], "description": "Optional absolute PNG path to keep a copy."},
+                "save_path": {"type": ["string", "null"], "description": "Optional absolute PNG path to atomically create or replace after capture succeeds."},
             },
             "required": ["window"],
         },
-        "annotations": {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
+        "annotations": {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True, "openWorldHint": False},
     },
     {
         "name": "send_window_shortcut",
@@ -142,6 +142,32 @@ def run(args: list[str], *, timeout: float = 10.0) -> subprocess.CompletedProces
     return subprocess.run(args, text=True, capture_output=True, timeout=timeout, check=False)
 
 
+def find_xwayland_display(instance: str, wayland_display: str, proc_root: Path = Path("/proc")) -> str | None:
+    candidates: list[tuple[int, str]] = []
+    for process in proc_root.iterdir():
+        if not process.name.isdigit():
+            continue
+        try:
+            if process.stat().st_uid != os.getuid() or (process / "comm").read_text().strip() != "Xwayland":
+                continue
+            entries = (process / "environ").read_bytes().split(b"\0")
+            environment = {
+                key.decode(): value.decode()
+                for entry in entries if b"=" in entry
+                for key, value in [entry.split(b"=", 1)]
+            }
+        except (FileNotFoundError, PermissionError, ProcessLookupError, UnicodeDecodeError):
+            continue
+        if environment.get("HYPRLAND_INSTANCE_SIGNATURE") != instance:
+            continue
+        if environment.get("WAYLAND_DISPLAY") != wayland_display:
+            continue
+        display = environment.get("DISPLAY")
+        if display:
+            candidates.append((int(process.name), display))
+    return max(candidates)[1] if candidates else None
+
+
 def ensure_session_environment() -> None:
     global _SESSION_ATTACHED
     if _SESSION_ATTACHED:
@@ -163,7 +189,14 @@ def ensure_session_environment() -> None:
         selected = max(matching or instances, key=lambda instance: int(instance.get("time") or 0))
         os.environ["HYPRLAND_INSTANCE_SIGNATURE"] = str(selected["instance"])
         os.environ.setdefault("WAYLAND_DISPLAY", str(selected["wl_socket"]))
-    if not os.environ.get("DISPLAY"):
+    wayland_display = os.environ.get("WAYLAND_DISPLAY")
+    xwayland_display = (
+        find_xwayland_display(os.environ["HYPRLAND_INSTANCE_SIGNATURE"], wayland_display)
+        if wayland_display else None
+    )
+    if xwayland_display:
+        os.environ["DISPLAY"] = xwayland_display
+    elif not os.environ.get("DISPLAY"):
         sockets = sorted(Path("/tmp/.X11-unix").glob("X*"))
         if len(sockets) == 1 and sockets[0].name[1:].isdigit():
             os.environ["DISPLAY"] = f":{sockets[0].name[1:]}"
@@ -583,31 +616,34 @@ def text_result(value: Any) -> dict[str, Any]:
 def capture_result(arguments: dict[str, Any]) -> dict[str, Any]:
     selected = resolve_window(str(arguments["window"]))
     requested_path = arguments.get("save_path")
-    temporary = requested_path is None
     if requested_path:
         output = Path(str(requested_path)).expanduser()
         if not output.is_absolute():
             raise ValueError("save_path must be absolute")
         output.parent.mkdir(parents=True, exist_ok=True)
+        fd, name = tempfile.mkstemp(prefix=f".{output.name}.", suffix=".tmp", dir=output.parent)
     else:
         fd, name = tempfile.mkstemp(prefix="same-session-window-", suffix=".png")
-        os.close(fd)
-        output = Path(name)
-    proc = run(["grim", "-T", str(selected["capture_id"]), str(output)], timeout=20)
-    if proc.returncode:
-        output.unlink(missing_ok=True)
-        raise RuntimeError(proc.stderr.strip() or "exact window capture failed")
-    raw = output.read_bytes()
-    data = base64.b64encode(raw).decode("ascii")
+    os.close(fd)
+    capture = Path(name)
+    try:
+        proc = run(["grim", "-T", str(selected["capture_id"]), str(capture)], timeout=20)
+        if proc.returncode:
+            raise RuntimeError(proc.stderr.strip() or "exact window capture failed")
+        raw = capture.read_bytes()
+        data = base64.b64encode(raw).decode("ascii")
+        if requested_path:
+            capture.replace(output)
+    finally:
+        capture.unlink(missing_ok=True)
     metadata = {
         "window": selected,
         "coordinate_space": window_coordinate_space(selected, raw),
-        "saved_to": None if temporary else str(output),
+        "saved_to": str(output) if requested_path else None,
         "focus_changed": False,
         "pointer_moved": False,
         "workspace_changed": False,
     }
-    if temporary: output.unlink(missing_ok=True)
     return {
         "content": [
             {"type": "text", "text": json.dumps(metadata, indent=2, ensure_ascii=False)},
