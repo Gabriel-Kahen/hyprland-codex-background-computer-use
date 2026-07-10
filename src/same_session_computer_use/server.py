@@ -449,9 +449,7 @@ def capture_lease(token: str) -> dict[str, Any]:
     coordinate_height = int(round(float(monitor["height"]) / scale))
     address = str((state.get("target") or {}).get("address") or "")
     current = next((w for w in combine_windows() if w.get("address") == address), state["target"])
-    pixel_size = None
-    if len(raw) >= 24 and raw[:8] == b"\x89PNG\r\n\x1a\n":
-        pixel_size = {"width": int.from_bytes(raw[16:20], "big"), "height": int.from_bytes(raw[20:24], "big")}
+    pixel_size = png_pixel_size(raw)
     metadata = {
         "lease_token": token,
         "output": state["output"],
@@ -477,6 +475,26 @@ def validate_point(window: dict[str, Any], x: float, y: float) -> None:
     size = window.get("size") or []
     if len(size) != 2 or not (0 <= x < float(size[0]) and 0 <= y < float(size[1])):
         raise ValueError(f"coordinate ({x},{y}) is outside window size {size}")
+
+
+def png_pixel_size(raw: bytes) -> dict[str, int] | None:
+    if len(raw) < 24 or raw[:8] != b"\x89PNG\r\n\x1a\n":
+        return None
+    return {"width": int.from_bytes(raw[16:20], "big"), "height": int.from_bytes(raw[20:24], "big")}
+
+
+def window_coordinate_space(window: dict[str, Any], raw: bytes) -> dict[str, Any] | None:
+    size = window.get("size") or []
+    pixels = png_pixel_size(raw)
+    if len(size) != 2 or not pixels or not pixels["width"] or not pixels["height"]:
+        return None
+    width, height = float(size[0]), float(size[1])
+    return {
+        "window_local": {"width": width, "height": height},
+        "screenshot_pixels": pixels,
+        "pixel_to_window_scale": {"x": width / pixels["width"], "y": height / pixels["height"]},
+        "note": "Pointer tools use window-local coordinates: multiply screenshot x/y by pixel_to_window_scale.",
+    }
 
 
 def ensure_target_pointer_plugin() -> None:
@@ -612,12 +630,20 @@ def capture_result(arguments: dict[str, Any]) -> dict[str, Any]:
         proc = run(["grim", "-T", str(selected["capture_id"]), str(capture)], timeout=20)
         if proc.returncode:
             raise RuntimeError(proc.stderr.strip() or "exact window capture failed")
-        data = base64.b64encode(capture.read_bytes()).decode("ascii")
+        raw = capture.read_bytes()
+        data = base64.b64encode(raw).decode("ascii")
         if requested_path:
             capture.replace(output)
     finally:
         capture.unlink(missing_ok=True)
-    metadata = {"window": selected, "saved_to": str(output) if requested_path else None, "focus_changed": False, "pointer_moved": False, "workspace_changed": False}
+    metadata = {
+        "window": selected,
+        "coordinate_space": window_coordinate_space(selected, raw),
+        "saved_to": str(output) if requested_path else None,
+        "focus_changed": False,
+        "pointer_moved": False,
+        "workspace_changed": False,
+    }
     return {
         "content": [
             {"type": "text", "text": json.dumps(metadata, indent=2, ensure_ascii=False)},
