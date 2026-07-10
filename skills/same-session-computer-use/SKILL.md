@@ -34,7 +34,7 @@ Operate the real logged-in session. Never substitute a VM, nested desktop, alter
 The same-session broker provides window-local pointer injection without moving Hyprland's physical cursor:
 
 1. Refresh `list_session_windows` immediately before acting and use the current address.
-2. Use coordinates from the latest exact `capture_session_window` image.
+2. Use coordinates from the latest exact `capture_session_window` image. Convert screenshot pixels with the returned `coordinate_space.pixel_to_window_scale` before calling a pointer tool.
 3. Keep every coordinate inside the returned window dimensions.
 4. Prefer `targeted_pointer_click` over the headless lease fallback.
 5. Verify the result with another exact capture.
