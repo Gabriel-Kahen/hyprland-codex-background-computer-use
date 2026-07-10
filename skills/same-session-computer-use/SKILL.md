@@ -3,7 +3,7 @@ name: same-session-computer-use
 description: Operate native applications in the user's real current Hyprland login while preserving their existing processes, profiles, signed-in sessions, open files, and application state. Use when the user asks Codex to view, screenshot, or control an already-open Linux app; to behave like macOS Computer Use; to work in the background without creating an isolated desktop; or to avoid disturbing the physical pointer, focus, and workspace.
 ---
 
-# Same Session Computer Use
+# Hyprland Codex Background Computer Use
 
 Operate the real logged-in session. Never substitute a VM, nested desktop, alternate `HOME`, fresh browser profile, duplicate application profile, or isolated D-Bus session.
 

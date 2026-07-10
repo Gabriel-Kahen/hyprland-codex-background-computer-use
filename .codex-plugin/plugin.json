@@ -1,13 +1,13 @@
 {
   "name": "same-session-computer-use",
-  "version": "0.1.0+codex.20260710025414",
+  "version": "0.1.0+codex.20260710031024",
   "description": "Operate the user's real logged-in Linux applications without creating a second profile or desktop session.",
   "author": {
     "name": "Gabe"
   },
   "skills": "./skills/",
   "interface": {
-    "displayName": "Same Session Computer Use",
+    "displayName": "Hyprland Codex Background Computer Use",
     "shortDescription": "Control your real logged-in Linux apps.",
     "longDescription": "Lets Codex inspect and operate existing windows in your current Hyprland login, preserving application processes, profiles, files, and signed-in state. It adds exact background capture, accessibility actions, targeted shortcuts, and window-local click, scroll, and drag controls that preserve your physical pointer, focus, and workspace.",
     "developerName": "Gabe",

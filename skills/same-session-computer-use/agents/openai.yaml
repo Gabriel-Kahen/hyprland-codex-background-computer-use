@@ -1,4 +1,4 @@
 interface:
-  display_name: "Same-session Computer Use"
+  display_name: "Hyprland Codex Background Computer Use"
   short_description: "Control your real logged-in Linux apps."
   default_prompt: "Use my existing Linux apps and sessions without creating a separate desktop."

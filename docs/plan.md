@@ -1,4 +1,4 @@
-# Same-session Linux Computer Use plan
+# Hyprland Codex Background Computer Use plan
 
 ## Goal
 

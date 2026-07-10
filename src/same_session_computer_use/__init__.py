@@ -1,1 +1,1 @@
-"""Same-session Linux Computer Use helpers."""
+"""Hyprland Codex Background Computer Use helpers."""

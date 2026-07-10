@@ -1,6 +1,6 @@
-# Linux Computer Use Patch
+# Hyprland Codex Background Computer Use
 
-Same-session computer control for Linux and Hyprland.
+Background computer control for Codex in the user's existing Hyprland session.
 
 This project lets an automation agent inspect and operate the applications that are already running in the user's real desktop login. It preserves the same processes, profiles, signed-in sessions, files, and open windows instead of launching applications in a VM, nested compositor, or alternate home directory.
 
