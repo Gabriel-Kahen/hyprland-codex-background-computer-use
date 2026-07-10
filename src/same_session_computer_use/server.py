@@ -142,6 +142,32 @@ def run(args: list[str], *, timeout: float = 10.0) -> subprocess.CompletedProces
     return subprocess.run(args, text=True, capture_output=True, timeout=timeout, check=False)
 
 
+def find_xwayland_display(instance: str, wayland_display: str, proc_root: Path = Path("/proc")) -> str | None:
+    candidates: list[tuple[int, str]] = []
+    for process in proc_root.iterdir():
+        if not process.name.isdigit():
+            continue
+        try:
+            if process.stat().st_uid != os.getuid() or (process / "comm").read_text().strip() != "Xwayland":
+                continue
+            entries = (process / "environ").read_bytes().split(b"\0")
+            environment = {
+                key.decode(): value.decode()
+                for entry in entries if b"=" in entry
+                for key, value in [entry.split(b"=", 1)]
+            }
+        except (FileNotFoundError, PermissionError, ProcessLookupError, UnicodeDecodeError):
+            continue
+        if environment.get("HYPRLAND_INSTANCE_SIGNATURE") != instance:
+            continue
+        if environment.get("WAYLAND_DISPLAY") != wayland_display:
+            continue
+        display = environment.get("DISPLAY")
+        if display:
+            candidates.append((int(process.name), display))
+    return max(candidates)[1] if candidates else None
+
+
 def ensure_session_environment() -> None:
     global _SESSION_ATTACHED
     if _SESSION_ATTACHED:
@@ -163,7 +189,14 @@ def ensure_session_environment() -> None:
         selected = max(matching or instances, key=lambda instance: int(instance.get("time") or 0))
         os.environ["HYPRLAND_INSTANCE_SIGNATURE"] = str(selected["instance"])
         os.environ.setdefault("WAYLAND_DISPLAY", str(selected["wl_socket"]))
-    if not os.environ.get("DISPLAY"):
+    wayland_display = os.environ.get("WAYLAND_DISPLAY")
+    xwayland_display = (
+        find_xwayland_display(os.environ["HYPRLAND_INSTANCE_SIGNATURE"], wayland_display)
+        if wayland_display else None
+    )
+    if xwayland_display:
+        os.environ["DISPLAY"] = xwayland_display
+    elif not os.environ.get("DISPLAY"):
         sockets = sorted(Path("/tmp/.X11-unix").glob("X*"))
         if len(sockets) == 1 and sockets[0].name[1:].isdigit():
             os.environ["DISPLAY"] = f":{sockets[0].name[1:]}"
