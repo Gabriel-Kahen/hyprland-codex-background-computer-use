@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "same-session-computer-use": {
+      "command": "./bin/same-session-computer-use-mcp",
+      "args": [],
+      "cwd": "."
+    }
+  }
+}

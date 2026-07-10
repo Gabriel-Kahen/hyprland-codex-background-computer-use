@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+*.so
+.built-for-hyprland
+.pytest_cache/
+.mypy_cache/
+*.log
+*.tmp
