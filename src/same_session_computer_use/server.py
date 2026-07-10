@@ -44,11 +44,11 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "window": {"type": "string", "description": "Hyprland address, exact-capture identifier, exact class, or title substring."},
-                "save_path": {"type": ["string", "null"], "description": "Optional absolute PNG path to keep a copy."},
+                "save_path": {"type": ["string", "null"], "description": "Optional absolute PNG path to atomically create or replace after capture succeeds."},
             },
             "required": ["window"],
         },
-        "annotations": {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
+        "annotations": {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True, "openWorldHint": False},
     },
     {
         "name": "send_window_shortcut",
@@ -565,23 +565,27 @@ def text_result(value: Any) -> dict[str, Any]:
 def capture_result(arguments: dict[str, Any]) -> dict[str, Any]:
     selected = resolve_window(str(arguments["window"]))
     requested_path = arguments.get("save_path")
-    temporary = requested_path is None
     if requested_path:
         output = Path(str(requested_path)).expanduser()
         if not output.is_absolute():
             raise ValueError("save_path must be absolute")
         output.parent.mkdir(parents=True, exist_ok=True)
+        fd, name = tempfile.mkstemp(prefix=f".{output.name}.", suffix=".tmp", dir=output.parent)
     else:
         fd, name = tempfile.mkstemp(prefix="same-session-window-", suffix=".png")
-        os.close(fd)
-        output = Path(name)
-    proc = run(["grim", "-T", str(selected["capture_id"]), str(output)], timeout=20)
+    os.close(fd)
+    capture = Path(name)
+    proc = run(["grim", "-T", str(selected["capture_id"]), str(capture)], timeout=20)
     if proc.returncode:
-        output.unlink(missing_ok=True)
+        capture.unlink(missing_ok=True)
         raise RuntimeError(proc.stderr.strip() or "exact window capture failed")
-    data = base64.b64encode(output.read_bytes()).decode("ascii")
-    metadata = {"window": selected, "saved_to": None if temporary else str(output), "focus_changed": False, "pointer_moved": False, "workspace_changed": False}
-    if temporary: output.unlink(missing_ok=True)
+    try:
+        data = base64.b64encode(capture.read_bytes()).decode("ascii")
+        if requested_path:
+            capture.replace(output)
+    finally:
+        capture.unlink(missing_ok=True)
+    metadata = {"window": selected, "saved_to": str(output) if requested_path else None, "focus_changed": False, "pointer_moved": False, "workspace_changed": False}
     return {
         "content": [
             {"type": "text", "text": json.dumps(metadata, indent=2, ensure_ascii=False)},
