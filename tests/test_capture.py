@@ -37,3 +37,17 @@ class CaptureSaveTests(TestCase):
 
             self.assertEqual(destination.read_bytes(), b"new image")
             self.assertEqual(result["structuredContent"]["saved_to"], str(destination))
+
+    def test_capture_timeout_removes_temporary_file(self) -> None:
+        with TemporaryDirectory() as directory:
+            destination = Path(directory) / "capture.png"
+            destination.write_bytes(b"keep me")
+
+            with patch.object(server, "resolve_window", return_value=WINDOW), patch.object(
+                server, "run", side_effect=subprocess.TimeoutExpired("grim", 20)
+            ):
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    server.capture_result({"window": "target", "save_path": str(destination)})
+
+            self.assertEqual(destination.read_bytes(), b"keep me")
+            self.assertEqual(list(destination.parent.glob(".capture.png.*.tmp")), [])

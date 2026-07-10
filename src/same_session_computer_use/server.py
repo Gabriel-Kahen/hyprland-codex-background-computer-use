@@ -575,11 +575,10 @@ def capture_result(arguments: dict[str, Any]) -> dict[str, Any]:
         fd, name = tempfile.mkstemp(prefix="same-session-window-", suffix=".png")
     os.close(fd)
     capture = Path(name)
-    proc = run(["grim", "-T", str(selected["capture_id"]), str(capture)], timeout=20)
-    if proc.returncode:
-        capture.unlink(missing_ok=True)
-        raise RuntimeError(proc.stderr.strip() or "exact window capture failed")
     try:
+        proc = run(["grim", "-T", str(selected["capture_id"]), str(capture)], timeout=20)
+        if proc.returncode:
+            raise RuntimeError(proc.stderr.strip() or "exact window capture failed")
         data = base64.b64encode(capture.read_bytes()).decode("ascii")
         if requested_path:
             capture.replace(output)
