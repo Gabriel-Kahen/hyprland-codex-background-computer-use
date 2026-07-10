@@ -22,6 +22,7 @@ STATE_DIR = Path.home() / ".local/state/same-session-computer-use"
 LEASE_FILE = STATE_DIR / "coordinate-lease.json"
 LOCK_FILE = STATE_DIR / "coordinate-lease.lock"
 POINTER_LOCK = threading.Lock()
+_SESSION_ATTACHED = False
 
 TOOLS = [
     {
@@ -141,7 +142,36 @@ def run(args: list[str], *, timeout: float = 10.0) -> subprocess.CompletedProces
     return subprocess.run(args, text=True, capture_output=True, timeout=timeout, check=False)
 
 
+def ensure_session_environment() -> None:
+    global _SESSION_ATTACHED
+    if _SESSION_ATTACHED:
+        return
+    os.environ.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+        proc = subprocess.run(["hyprctl", "instances", "-j"], text=True, capture_output=True, timeout=5, check=False)
+        if proc.returncode:
+            raise RuntimeError(proc.stderr.strip() or "failed to discover the active Hyprland session")
+        instances = []
+        for instance in json.loads(proc.stdout):
+            process = Path(f"/proc/{instance.get('pid')}")
+            if process.exists() and process.stat().st_uid == os.getuid():
+                instances.append(instance)
+        if not instances:
+            raise RuntimeError("no live Hyprland session belongs to this login")
+        wayland_display = os.environ.get("WAYLAND_DISPLAY")
+        matching = [instance for instance in instances if instance.get("wl_socket") == wayland_display] if wayland_display else []
+        selected = max(matching or instances, key=lambda instance: int(instance.get("time") or 0))
+        os.environ["HYPRLAND_INSTANCE_SIGNATURE"] = str(selected["instance"])
+        os.environ.setdefault("WAYLAND_DISPLAY", str(selected["wl_socket"]))
+    if not os.environ.get("DISPLAY"):
+        sockets = sorted(Path("/tmp/.X11-unix").glob("X*"))
+        if len(sockets) == 1 and sockets[0].name[1:].isdigit():
+            os.environ["DISPLAY"] = f":{sockets[0].name[1:]}"
+    _SESSION_ATTACHED = True
+
+
 def hypr_windows() -> list[dict[str, Any]]:
+    ensure_session_environment()
     proc = run(["hyprctl", "clients", "-j"])
     if proc.returncode:
         raise RuntimeError(proc.stderr.strip() or "failed to enumerate Hyprland windows")
@@ -191,6 +221,7 @@ def resolve_window(query: str) -> dict[str, Any]:
 
 
 def hypr_json(args: list[str]) -> Any:
+    ensure_session_environment()
     proc = run(["hyprctl", "-j", *args])
     if proc.returncode:
         raise RuntimeError(proc.stderr.strip() or f"hyprctl {' '.join(args)} failed")
@@ -198,6 +229,7 @@ def hypr_json(args: list[str]) -> Any:
 
 
 def hypr_dispatch(expression: str) -> None:
+    ensure_session_environment()
     proc = run(["hyprctl", "dispatch", expression])
     if proc.returncode or "ok" not in proc.stdout.lower():
         raise RuntimeError(proc.stderr.strip() or proc.stdout.strip() or f"Hyprland dispatch failed: {expression}")

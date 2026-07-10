@@ -1,6 +1,6 @@
 {
   "name": "same-session-computer-use",
-  "version": "0.1.0+codex.20260710021634",
+  "version": "0.1.0+codex.20260710025414",
   "description": "Operate the user's real logged-in Linux applications without creating a second profile or desktop session.",
   "author": {
     "name": "Gabe"
